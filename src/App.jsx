@@ -8,6 +8,8 @@ import Orders from "./pages/Orders";
 import PublicShop from "./pages/PublicShop";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import VerifyEmail from "./pages/VerifyEmail";
+import Checkout from "./pages/Checkout";
+
 
 
 export default function App() {
@@ -16,6 +18,8 @@ export default function App() {
       {/* Public */}
       <Route path="/" element={<Navigate to="/shop/demo" replace />} />
       <Route path="/shop/:shopId" element={<PublicShop />} />
+      <Route path="/shop/:shopId/checkout" element={<Checkout />} />
+
 
       {/* Auth */}
       <Route path="/login" element={<Login />} />

@@ -2,6 +2,8 @@
   "name": "wa-saas",
   "private": true,
   "version": "0.0.0",
+  "homepage": "https://mohdhathanee.github.io/wa-saas",
+
   "type": "module",
   "scripts": {
     "dev": "vite",

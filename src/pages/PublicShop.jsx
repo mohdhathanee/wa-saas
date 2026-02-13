@@ -1,181 +1,121 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
+  collection,
   doc,
   getDoc,
-  collection,
   onSnapshot,
   query,
   where,
-  addDoc,
-  serverTimestamp,
 } from "firebase/firestore";
+import { useCart } from "../cart/CartProvider";
 
+// Simple skeleton card (keep your original if you already have one)
 function SkeletonCard() {
   return (
-    <div className="animate-pulse rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
-      <div className="h-40 w-full rounded-xl bg-gray-100" />
+    <div className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+      <div className="h-44 w-full rounded-xl bg-gray-100" />
       <div className="mt-3 h-4 w-2/3 rounded bg-gray-100" />
-      <div className="mt-2 h-4 w-1/3 rounded bg-gray-100" />
-      <div className="mt-3 h-9 w-full rounded-xl bg-gray-100" />
+      <div className="mt-2 h-3 w-1/2 rounded bg-gray-100" />
+      <div className="mt-3 h-10 w-full rounded-xl bg-gray-100" />
     </div>
   );
 }
 
 export default function PublicShop() {
   const { shopId } = useParams();
+  const [searchParams] = useSearchParams();
+
   const [shop, setShop] = useState(null);
   const [products, setProducts] = useState([]);
-  const [loadingShop, setLoadingShop] = useState(true);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [err, setErr] = useState("");
 
-  const [customerName, setCustomerName] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
-  const [placingId, setPlacingId] = useState(null);
+  const { items, add, inc, dec, remove, total } = useCart();
+
+  const waNumber = useMemo(() => {
+    const raw = shop?.whatsapp || "";
+    return String(raw).replace(/[^\d]/g, "");
+  }, [shop?.whatsapp]);
+
+  const thanks = searchParams.get("thanks") === "1";
 
   useEffect(() => {
-    (async () => {
-      setLoadingShop(true);
-      const snap = await getDoc(doc(db, "shops", shopId));
-      setShop(snap.exists() ? snap.data() : null);
-      setLoadingShop(false);
-    })();
+    async function loadShop() {
+      try {
+        const snap = await getDoc(doc(db, "shops", shopId));
+        if (snap.exists()) setShop({ id: snap.id, ...snap.data() });
+        else setShop(null);
+      } catch (e) {
+        setErr(e?.message || "Failed to load shop.");
+      }
+    }
+    loadShop();
   }, [shopId]);
 
   useEffect(() => {
     setLoadingProducts(true);
+    setErr("");
+
     const q = query(
       collection(db, "shops", shopId, "products"),
       where("active", "==", true)
     );
+
     const unsub = onSnapshot(
       q,
       (snap) => {
         setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setLoadingProducts(false);
       },
-      () => setLoadingProducts(false)
+      (e) => {
+        setErr(e?.message || "Failed to load products.");
+        setLoadingProducts(false);
+      }
     );
+
     return () => unsub();
   }, [shopId]);
 
-  const waNumber = useMemo(
-    () => (shop?.whatsapp || "").replace(/\D/g, ""),
-    [shop?.whatsapp]
-  );
-
-  async function placeOrder(product) {
-    if (!customerName.trim()) {
-      alert("Please enter your name.");
-      return;
-    }
-
-    try {
-      setPlacingId(product.id);
-
-      // 1) Save order
-      await addDoc(collection(db, "shops", shopId, "orders"), {
-        productId: product.id,
-        productName: product.name,
-        price: product.price,
-        customerName: customerName.trim(),
-        customerAddress: customerAddress.trim(),
-        status: "new",
-        createdAt: serverTimestamp(),
-      });
-
-      // 2) Open WhatsApp message
-      const msg = `Hello! I want to order:
-
-Product: ${product.name}
-Price: Rs ${product.price}
-
-Name: ${customerName.trim()}
-Address: ${customerAddress.trim() || "-"}
-
-Sent from: ${shop?.shopName || "Shop Website"}`;
-
-      const url = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
-      window.open(url, "_blank");
-    } finally {
-      setPlacingId(null);
-    }
-  }
-
-  const shopName = shop?.shopName || "Shop";
-  const tagline = "Order in seconds — delivered via WhatsApp";
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      {/* Hero */}
-      <div className="border-b bg-white/70 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-8 md:px-6 md:py-10">
-          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="border-b bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-5 md:px-6">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
-                ✅ Verified WhatsApp Shop
-              </div>
-
-              <h1 className="mt-3 text-3xl font-extrabold tracking-tight md:text-4xl">
-                {loadingShop ? "Loading..." : shopName}
+              <h1 className="text-xl font-extrabold">
+                {shop?.shopName || "Shop"}
               </h1>
-              <p className="mt-2 max-w-xl text-sm text-gray-600 md:text-base">
-                {tagline}
+              <p className="text-sm text-gray-500">
+                Browse products • Add to cart • Checkout
               </p>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-                <div className="rounded-xl bg-gray-100 px-3 py-2 text-gray-800">
-                  WhatsApp: <span className="font-bold">{shop?.whatsapp || "-"}</span>
-                </div>
-
-                <a
-                  className="rounded-xl bg-green-600 px-4 py-2 font-semibold text-white hover:bg-green-700"
-                  href={`https://wa.me/${waNumber}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Chat on WhatsApp
-                </a>
-              </div>
             </div>
 
-            {/* Customer Details */}
-            <div className="w-full max-w-xl rounded-3xl border border-gray-100 bg-white p-4 shadow-sm md:max-w-md">
-              <div className="text-sm font-extrabold">Customer details</div>
-              <div className="mt-1 text-xs text-gray-500">
-                Enter once, then tap “Order” on any product.
-              </div>
-
-              <div className="mt-4 grid gap-3">
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-gray-600">
-                    Your name <span className="text-red-500">*</span>
-                  </span>
-                  <input
-                    className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-                    placeholder="e.g. Mohamed"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                  />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-xs font-semibold text-gray-600">Address (optional)</span>
-                  <input
-                    className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-                    placeholder="e.g. Pottuvil, Sri Lanka"
-                    value={customerAddress}
-                    onChange={(e) => setCustomerAddress(e.target.value)}
-                  />
-                </label>
-
-                <div className="rounded-2xl bg-blue-50 p-3 text-xs text-blue-900">
-                  ✅ Orders are sent through WhatsApp and also saved for the shop owner.
-                </div>
-              </div>
-            </div>
+            {waNumber ? (
+              <a
+                href={`https://wa.me/${waNumber}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-xl bg-green-600 px-3 py-2 text-sm font-extrabold text-white hover:bg-green-700"
+              >
+                WhatsApp
+              </a>
+            ) : null}
           </div>
+
+          {thanks ? (
+            <div className="mt-4 rounded-2xl bg-green-50 p-3 text-sm font-semibold text-green-800">
+              ✅ Thanks! Your order was placed successfully.
+            </div>
+          ) : null}
+
+          {err ? (
+            <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">
+              {err}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -185,7 +125,7 @@ Sent from: ${shop?.shopName || "Shop Website"}`;
           <div>
             <h2 className="text-lg font-extrabold">Products</h2>
             <p className="text-sm text-gray-500">
-              Tap “Order” to send WhatsApp message instantly.
+              Add items to cart, then checkout.
             </p>
           </div>
           <div className="text-xs text-gray-500">{products.length} items</div>
@@ -213,16 +153,22 @@ Sent from: ${shop?.shopName || "Shop Website"}`;
                   <div className="mt-3">
                     <div className="text-sm font-extrabold">{p.name}</div>
                     <div className="mt-1 text-xs text-gray-500">
-                      Fast WhatsApp ordering • No account required
+                      Quick checkout • WhatsApp verify
                     </div>
                   </div>
 
                   <button
-                    onClick={() => placeOrder(p)}
-                    disabled={placingId === p.id}
-                    className="mt-3 w-full rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                    onClick={() =>
+                      add({
+                        id: p.id,
+                        name: p.name,
+                        price: Number(p.price),
+                        imageUrl: p.imageUrl,
+                      })
+                    }
+                    className="mt-3 w-full rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                   >
-                    {placingId === p.id ? "Placing..." : "🛒 Order on WhatsApp"}
+                    ➕ Add to Cart
                   </button>
                 </div>
               ))}
@@ -235,7 +181,64 @@ Sent from: ${shop?.shopName || "Shop Website"}`;
         ) : null}
       </div>
 
-      {/* Sticky WhatsApp */}
+      {/* Sticky Cart Bar */}
+      {items.length > 0 ? (
+        <div className="fixed bottom-3 left-3 right-3 mx-auto max-w-3xl rounded-2xl bg-gray-900 p-3 text-white shadow-xl">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-extrabold">
+              {items.reduce((s, x) => s + (x.qty || 1), 0)} item(s) • Rs {total}
+            </div>
+
+            <Link
+              to={`/shop/${shopId}/checkout`}
+              className="rounded-xl bg-green-600 px-3 py-2 text-sm font-extrabold hover:bg-green-700"
+            >
+              Checkout →
+            </Link>
+          </div>
+
+          {/* Mini cart controls (optional but useful) */}
+          <div className="mt-2 grid gap-2">
+            {items.slice(0, 2).map((x) => (
+              <div key={x.id} className="flex items-center justify-between text-xs">
+                <div className="font-semibold">
+                  {x.name} <span className="text-gray-300">x{x.qty}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => dec(x.id)}
+                    className="rounded-lg bg-white/10 px-2 py-1 hover:bg-white/20"
+                    type="button"
+                  >
+                    −
+                  </button>
+                  <button
+                    onClick={() => inc(x.id)}
+                    className="rounded-lg bg-white/10 px-2 py-1 hover:bg-white/20"
+                    type="button"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => remove(x.id)}
+                    className="rounded-lg bg-white/10 px-2 py-1 hover:bg-white/20"
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+            {items.length > 2 ? (
+              <div className="text-[11px] text-gray-300">
+                + {items.length - 2} more item(s) in cart…
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Sticky WhatsApp (your original style) */}
       {waNumber ? (
         <a
           href={`https://wa.me/${waNumber}`}
